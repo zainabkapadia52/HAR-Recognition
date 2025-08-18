@@ -93,6 +93,20 @@ We will use the raw accelerometer data within the inertial_signals folder. The p
 2. Train Decision Tree with varying depths (2-8) using all above 3 methods. Plot the accuracy of the model on test data vs the depth of the tree. **[1 marks]**
 3. Are there any participants/ activitivies where the Model performace is bad? If Yes, Why? **[0.5 mark]**
 
+## Task 3 : Data Collection in the Wild [4 marks]
+
+## Task Description
+For this exercise marks will not depend on what numbers you get but on the process you followed Utilize apps like `Physics Toolbox Suite` from your smartphone to collect your data in .csv/.txt format. Ensure at least 15 seconds of data is collected, trimming edges to obtain 10 seconds of relevant data. Also record a video of yourself while recording data. This video will be required in some future assignments. Collect 3-5 samples per activity class.
+
+### Things to take care of:
+* Ensure the phone is placed in the same position for all the activities.
+* Ensure the phone is in the same alignment during the activity as changing the alignment will change the data collected and will affect the model's performance.
+* Ensure to have atleast 10s of data per file for training. As the data is collected at 50Hz, you will have 500 data samples.
+
+### Questions
+1. Use the Decision Tree model trained on the UCI-HAR dataset to predict the activities that you performed. Report the accuracy, precision, recall and confusion matrix of the model. You have three version of UCI dataset you can use a)Raw data from accelerometer, b)TSFEL featurised data, c)Features provided by author. Choose which version to use, ensuring that your test data is similar to your training data. How did the model perform? **[1 marks]**
+2. Use the data you collected to predict the activities that you performed. Decide whether to apply preprocessing and featurization, and if so, choose the appropriate methods. How did the model perform? **[1 marks]**
+
 
 
 # **Genral Instructions :**
