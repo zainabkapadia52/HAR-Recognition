@@ -67,48 +67,6 @@ def information_gain(Y: pd.Series, attr: pd.Series, criterion: str) -> float:
     return criterion_val- weighted_val
 
 
-def split_real(X_col: pd.Series, y: pd.Series, criterion: str):
-    # Sort values
-    df = pd.DataFrame({"feature": X_col, "target": y}).sort_values(by="feature")
-    
-    unique_vals = df["feature"].unique()
-    if len(unique_vals) == 1:
-        return None, -float('inf')
-    
-    best_ig= -float('inf')
-    best_thresh= None
-    
-    # potential threshold values
-    thresholds = [(unique_vals[i] + unique_vals[i+1]) / 2 for i in range(len(unique_vals)-1)]
-    for t in thresholds:
-        left_y= df[df["feature"] <= t]["target"]
-        right_y= df[df["feature"] > t]["target"]
-        
-        if left_y.empty or right_y.empty:
-            continue
-        
-        if criterion == "information_gain":
-            criterion_val = entropy(y)
-            left_val, right_val = entropy(left_y), entropy(right_y)
-        elif criterion == "gini_index":
-            criterion_val = gini_index(y)
-            left_val, right_val = gini_index(left_y), gini_index(right_y)
-        else:
-            criterion_val = mse(y)
-            left_val, right_val = mse(left_y), mse(right_y)
-       
-        weight_left= len(left_y) / len(y)
-        weight_right= len(right_y) / len(y)
-        
-        total_val = weight_left * left_val + weight_right * right_val
-        ig = criterion_val - total_val
-        
-        if ig > best_ig:
-            best_ig= ig
-            best_thresh= t
-    
-    return best_thresh, best_ig
-
 def opt_split_attribute(X: pd.DataFrame, y: pd.Series, criterion, features: pd.Series):
     """
     Function to find the optimal attribute to split about.
@@ -121,16 +79,21 @@ def opt_split_attribute(X: pd.DataFrame, y: pd.Series, criterion, features: pd.S
     best_ig = -float('inf')
     
     for f in features:
-        if pd.api.types.is_numeric_dtype(X[f]):
-            # real valued feature
-            thresh, ig = split_real(X[f], y, criterion)
-            if ig > best_ig:
-                best_ig, best_attr, best_thresh = ig, f, thresh
+        if check_ifreal(X[f]):
+            values = X[f].sort_values().unique()
+            thresholds = (values[:-1] + values[1:]) / 2  
+            for t in thresholds:
+                attr = X[f].apply(lambda v: f"<= {t}" if v <= t else f"> {t}")
+                score = information_gain(y, attr, criterion)
+                if score > best_ig:
+                    best_ig, best_attr, best_thresh = score, f, t
         else:
-            # discrete feature
-            ig= information_gain(y, X[f], criterion)
-            if ig > best_ig:
-                best_ig, best_attr, best_thresh = ig, f, None
+            categories = X[f].unique()
+            for c in categories:
+                attr = X[f].apply(lambda v: f"== {c}" if v == c else f"!= {c}")
+                score = information_gain(y, attr, criterion)
+                if score > best_ig:
+                    best_ig, best_attr, best_thresh = score, f, c
             
     return best_attr,best_thresh
 
@@ -148,7 +111,7 @@ def split_data(X: pd.DataFrame, y: pd.Series, attribute, value):
     """
 
     # Split the data based on a particular value of a particular attribute. You may use masking as a tool to split the data.
-    if pd.api.types.is_numeric_dtype(X[attribute]):
+    if check_ifreal(X[attribute]):
         left_idxs = X[attribute] <= value
         right_idxs = X[attribute] > value
     else:
