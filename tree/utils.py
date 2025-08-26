@@ -4,22 +4,29 @@ There is no restriction on following the below template, these fucntions are her
 """
 
 import pandas as pd
+from math import log
 
 def log2(x):
-    from math import log
     return log(x) / log(2)
 
 def mse(Y: pd.Series) -> float:
-
     """function to calculate mean squared error manually for regression """
-    mean_y = Y.mean()
-    return ((Y - mean_y) ** 2).mean()
+    mean_y = sum(Y)/len(Y)
+    tot=0
+    for i in Y:
+        tot += (i - mean_y) ** 2
+    return tot/len(Y)
 
 def one_hot_encoding(X: pd.DataFrame) -> pd.DataFrame:
     """
     Function to perform one hot encoding on the input data
     """
-    return pd.get_dummies(X)
+    new_df= pd.DataFrame()
+    for col in X.columns:
+        vals= sorted(X[col].unique())
+        for val in vals:
+            new_df[str(col)+"-"+ str(val)]= (X[col]==val).astype(int)
+    return new_df
 
 def check_ifreal(y: pd.Series) -> bool:
     """
@@ -31,15 +38,30 @@ def entropy(Y: pd.Series) -> float:
     """
     Function to calculate the entropy
     """
-    probs= Y.value_counts(normalize=True)
-    return -(probs * probs.apply(lambda p: log2(p) if p > 0 else 0)).sum()
+    freq={}
+    for val in Y:
+        freq[val]= freq.get(val,0)+1
+    ans=0
+    for val,cnt in freq.items():
+        prob= cnt/len(Y)
+        ans -= prob*log2(prob)
+    
+    return ans
 
 def gini_index(Y: pd.Series) -> float:
     """
     Function to calculate the gini index
     """
-    probs = Y.value_counts(normalize=True)
-    return 1 - sum(probs ** 2)
+    freq={}
+    for val in Y:
+        freq[val] = freq.get(val, 0) + 1
+    
+    ans=1
+    for val, cnt in freq.items():
+        prob= cnt/len(Y)
+        ans-= prob**2
+    
+    return ans
 
 def information_gain(Y: pd.Series, attr: pd.Series, criterion: str) -> float:
     """
@@ -80,15 +102,15 @@ def opt_split_attribute(X: pd.DataFrame, y: pd.Series, criterion, features: pd.S
     
     for f in features:
         if check_ifreal(X[f]):
-            values = X[f].sort_values().unique()
-            thresholds = (values[:-1] + values[1:]) / 2  
+            values = sorted(X[f].unique())
+            thresholds = [(values[i] + values[i+1]) / 2 for i in range(len(values) - 1)]
             for t in thresholds:
                 attr = X[f].apply(lambda v: f"<= {t}" if v <= t else f"> {t}")
                 score = information_gain(y, attr, criterion)
                 if score > best_ig:
                     best_ig, best_attr, best_thresh = score, f, t
         else:
-            categories = X[f].unique()
+            categories = sorted(X[f].unique())
             for c in categories:
                 attr = X[f].apply(lambda v: f"== {c}" if v == c else f"!= {c}")
                 score = information_gain(y, attr, criterion)
