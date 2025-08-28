@@ -62,23 +62,28 @@ class DecisionTree:
     
     def fit_discrete_discrete(self, X,y, attr,depth):
         if depth >= self.max_depth:
-            return y.mode().iloc[0]
+            return y.mode().iloc[0] 
         if len(y.unique()) == 1:
             return y.iloc[0]
         if len(attr) == 0:
             return y.mode().iloc[0]
 
+         # choose attribute with best split criterion
         best_attr = opt_split_attribute(X, y, self.criterion, attr)
         node = Node()
         node.split_attr = best_attr
-
+        
+        # one-hot encoded features belonging to chosen attribute
         encoded_features = [col for col in X.columns if col.startswith(str(best_attr) + "-")]
         attr = attr[~attr.isin(encoded_features)]
 
+        # recursing for each value of the chosen attribute
         for _, feat in enumerate(encoded_features):
             X_subset = X[X[feat] == 1]
             y_subset = y[X_subset.index]
             if X_subset.empty:
+
+                # If no samples, assign majority class
                 node.children[feat] = y.mode().iloc[0]
                 node.value = y.mode().iloc[0]
             else:
@@ -127,11 +132,13 @@ class DecisionTree:
         if len(y.unique()) == 1: return y.iloc[0]
         if len(attr) == 0: return y.mode().iloc[0]
 
+        # select best attribute and threshold for binary split
         best_attr, best_thresh = opt_split_attribute(X, y, self.criterion, attr)
         node = Node()
         node.split_attr = best_attr
         node.threshold = best_thresh
 
+        # remove used attribute to not do repeated splitting on same column
         attr = attr[~attr.isin([best_attr])]
 
         X_left, y_left, X_right, y_right = split_data(X, y, best_attr, best_thresh)
@@ -143,6 +150,7 @@ class DecisionTree:
         if depth >= self.max_depth or len(attr) == 0: return y.mean()
         if len(y.unique()) == 1: return y.iloc[0]
 
+        # select best attribute and threshold based on MSE reduction
         best_attr, best_thresh = opt_split_attribute(X, y, "mse", attr)
         node = Node()
         node.split_attr = best_attr
@@ -150,6 +158,7 @@ class DecisionTree:
 
         attr = attr[~attr.isin([best_attr])]
 
+        # partition data and recurse
         X_left, y_left, X_right, y_right = split_data(X, y, best_attr, best_thresh)
         node.left = self.fit_real_real(X_left, y_left, attr, depth + 1)
         node.right = self.fit_real_real(X_right, y_right, attr, depth + 1)
