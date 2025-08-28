@@ -15,83 +15,195 @@ from tree.utils import *
 
 np.random.seed(42)
 
+@dataclass
 class Node:
-    def __init__(self, feature=None, threshold=None, left=None, right=None, value=None):
-        self.feature = feature
-        self.threshold = threshold
-        self.left = left
-        self.right = right
-        self.value = value 
+    def __init__(self):
+        self.threshold = None
+        self.left = None
+        self.right = None
+        self.value = None
+        self.split_attr = None
+        self.children = {}  # for discrete splits
 
+@dataclass
 class DecisionTree:
+    criterion: Literal["information_gain", "gini_index"]
+    max_depth: int
     def __init__(self, criterion, max_depth=5):
         self.criterion = criterion
         self.max_depth = max_depth
-        self.root = None
+        self.root = {}
+        self.inp = None
+        self.out = None
 
-    def fit(self, X: pd.DataFrame, y: pd.Series):
-        self.root = self._build_tree(X, y, depth=0)
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
+        feature= [X[i].dtype.name for i in X.columns]
 
-    def _build_tree(self, X, y, depth):
-        if check_ifreal(y):
-            criterion = "mse"
-        else:
-            criterion = self.criterion
-        if depth >= self.max_depth or len(y.unique()) == 1 or X.empty:
-            if check_ifreal(y):
-                return Node(value=float(y.mean()))
+        self.inp= feature[0]
+        self.out= y.dtype.name
+
+        if self.inp != "float64":
+            X = one_hot_encoding(X)  #one hot categorical inputs if discrete .
+
+        attr = pd.Series(X.columns)
+
+        if self.inp != "float64" and self.out != "float64":
+            self.root = self.fit_discrete_discrete(X, y, attr, 0)
+
+        elif self.inp != "float64" and self.out == "float64":
+            self.root = self.fit_discrete_real(X, y, attr, 0)
+
+        elif self.inp == "float64" and self.out != "float64":
+            self.root = self.fit_real_discrete(X, y, attr, 0)
+
+        elif self.inp == "float64" and self.out == "float64":
+            self.root = self.fit_real_real(X, y, attr, 0)
+
+    
+    def fit_discrete_discrete(self, X,y, attr,depth):
+        if depth >= self.max_depth:
+            return y.mode().iloc[0]
+        if len(y.unique()) == 1:
+            return y.iloc[0]
+        if len(attr) == 0:
+            return y.mode().iloc[0]
+
+        best_attr = opt_split_attribute(X, y, self.criterion, attr)
+        node = Node()
+        node.split_attr = best_attr
+
+        encoded_features = [col for col in X.columns if col.startswith(str(best_attr) + "-")]
+        attr = attr[~attr.isin(encoded_features)]
+
+        for _, feat in enumerate(encoded_features):
+            X_subset = X[X[feat] == 1]
+            y_subset = y[X_subset.index]
+            if X_subset.empty:
+                node.children[feat] = y.mode().iloc[0]
+                node.value = y.mode().iloc[0]
             else:
-                return Node(value=y.mode()[0])  
-            
-        features = X.columns
-        best_attr, best_thresh = opt_split_attribute(X, y, criterion, features)
+                node.children[feat] = self.fit_discrete_discrete(X_subset, y_subset, attr, depth + 1)
+        return node
+    
+    def fit_discrete_real(self, X, y, attr, depth):
+        if depth >= self.max_depth or len(attr) == 0: 
+            return y.mean()
+        if len(y.unique()) == 1: 
+            return y.iloc[0]
 
-        if best_attr is None: 
-            if check_ifreal(y):
-                return Node(value= float(y.mean()))
-            else:
-                return Node(value=y.mode()[0])
+        #Group one hot columns by their original feature
+        groups = {}
+        for col in attr:
+            orig = str(col).split("-")[0] 
+            groups.setdefault(orig, []).append(col)
+
+        # Pick the feature with the best variance reduction
+        best_attr, best_score = None, -float("inf")
+        for orig, cols in groups.items():
+            active = X[cols].idxmax(axis=1)
+            score = information_gain(y, active, "mse")
+            if score > best_score:
+                best_score, best_attr = score, orig
+
+        node = Node()
+        node.split_attr = best_attr
+        node.value = y.mean() 
         
-        X_left, y_left, X_right, y_right = split_data(X, y, best_attr, best_thresh)
+        encoded_features = groups[best_attr]
+        attr = attr[~attr.isin(encoded_features)]
 
-        if X_left.empty or X_right.empty:
-            if check_ifreal(y):
-                return Node(value=float(y.mean()))
+        for col in encoded_features:
+            X_subset = X[X[col] == 1]
+            y_subset = y[X_subset.index]
+            if X_subset.empty:
+                node.children[col] = y.mean()
             else:
-                return Node(value=y.mode()[0])
+                node.children[col] = self.fit_discrete_real(X_subset, y_subset, attr, depth + 1)
 
-        left= self._build_tree(X_left, y_left, depth + 1)
-        right= self._build_tree(X_right, y_right, depth + 1)
+        return node
 
-        return Node(feature=best_attr, threshold=best_thresh, left=left, right=right)
+    def fit_real_discrete(self, X, y, attr, depth):
+        if depth >= self.max_depth: return y.mode().iloc[0]
+        if len(y.unique()) == 1: return y.iloc[0]
+        if len(attr) == 0: return y.mode().iloc[0]
 
+        best_attr, best_thresh = opt_split_attribute(X, y, self.criterion, attr)
+        node = Node()
+        node.split_attr = best_attr
+        node.threshold = best_thresh
 
+        attr = attr[~attr.isin([best_attr])]
+
+        X_left, y_left, X_right, y_right = split_data(X, y, best_attr, best_thresh)
+        node.left = self.fit_real_discrete(X_left, y_left, attr, depth + 1)
+        node.right = self.fit_real_discrete(X_right, y_right, attr, depth + 1)
+        return node
+    
+    def fit_real_real(self, X, y, attr, depth):
+        if depth >= self.max_depth or len(attr) == 0: return y.mean()
+        if len(y.unique()) == 1: return y.iloc[0]
+
+        best_attr, best_thresh = opt_split_attribute(X, y, "mse", attr)
+        node = Node()
+        node.split_attr = best_attr
+        node.threshold = best_thresh
+
+        attr = attr[~attr.isin([best_attr])]
+
+        X_left, y_left, X_right, y_right = split_data(X, y, best_attr, best_thresh)
+        node.left = self.fit_real_real(X_left, y_left, attr, depth + 1)
+        node.right = self.fit_real_real(X_right, y_right, attr, depth + 1)
+        return node
+   
     def predict(self, X: pd.DataFrame) -> pd.Series:
-        preds = [self._traverse_tree(x, self.root) for _, x in X.iterrows()]
+        if self.inp != "float64":
+            X = one_hot_encoding(X)
+
+        preds = []
+        for _, row in X.iterrows():
+            node = self.root
+            while isinstance(node, Node):
+                split_attr, threshold = node.split_attr, node.threshold
+                if self.inp == "float64":  # real input
+                    if row[split_attr] <= threshold:
+                        node = node.left
+                    else:
+                        node = node.right
+                else:  # discrete input
+                    found = False
+                    for feat, child in node.children.items():
+                        if row[feat] == 1:  
+                            node = child
+                            found = True
+                            break
+                    if not found:
+                        node = node.value
+            preds.append(node)
         return pd.Series(preds)
 
-    def _traverse_tree(self, x, node: Node):     
-        if node.value is not None:
-            return node.value
-        if pd.api.types.is_numeric_dtype(type(x[node.feature])):
-            if x[node.feature] <= node.threshold:
-                return self._traverse_tree(x, node.left)
-            else:
-                return self._traverse_tree(x, node.right)
-        else: 
-            if x[node.feature] == node.threshold:
-                return self._traverse_tree(x, node.left)
-            else:
-                return self._traverse_tree(x, node.right)
-        
-
-    def plot(self, node=None, depth=0):
-
+    def plot(self, node=None, indent=""):
         if node is None:
             node = self.root
-        if node.value is not None:
-            print("\t" * depth + f"Leaf: {node.value}")
+
+        # Leaf node
+        if not isinstance(node, Node):
+            print(indent + f"Prediction: {node}")
+            return
+
+        # Real-valued splits
+        if self.inp == "float64":
+            print(indent + f"? (X[{node.split_attr}] <= {node.threshold:.4f})")
+
+            print(indent + "  True:")
+            self.plot(node.left, indent + "    ")
+
+            print(indent + "  False:")
+            self.plot(node.right, indent + "    ")
+
+        # Discrete splits
         else:
-            print("\t" * depth + f"{node.feature} <= {node.threshold}")
-            self.plot(node.left, depth + 1)
-            self.plot(node.right, depth + 1)
+            print(indent + f"? (X[{node.split_attr}] categorical split)")
+            for value, child in node.children.items():
+                print(indent + f"  Value = {value}:")
+                self.plot(child, indent + "    ")
+
